@@ -23,6 +23,11 @@ class MemoryRecords implements RecordStore {
   }
 
   @override
+  Future<void> delete(String id) async {
+    rows.remove(id);
+  }
+
+  @override
   Future<void> close() async {}
 }
 

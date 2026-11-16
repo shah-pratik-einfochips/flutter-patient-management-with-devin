@@ -44,4 +44,18 @@ class PatientController extends AsyncNotifier<List<Patient>> {
       await ref.read(repositoryProvider).addReading(patientId, reading),
     );
   }
+
+  Future<void> removeReading(String patientId, String readingId) async {
+    if (!state.hasValue) throw const StorageUnavailable();
+    state = AsyncData(
+      await ref.read(repositoryProvider).removeReading(patientId, readingId),
+    );
+  }
+
+  Future<void> deletePatient(String patientId) async {
+    if (!state.hasValue) throw const StorageUnavailable();
+    state = AsyncData(
+      await ref.read(repositoryProvider).deletePatient(patientId),
+    );
+  }
 }

@@ -1,22 +1,94 @@
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../domain/patient.dart';
 import 'components.dart';
+import 'export.dart';
+import 'providers.dart';
 
-class PatientDetailPage extends StatefulWidget {
+class PatientDetailPage extends ConsumerStatefulWidget {
   const PatientDetailPage({super.key, required this.patient});
   final Patient patient;
   @override
-  State<PatientDetailPage> createState() => _PatientDetailPageState();
+  ConsumerState<PatientDetailPage> createState() => _PatientDetailPageState();
 }
 
-class _PatientDetailPageState extends State<PatientDetailPage> {
+class _PatientDetailPageState extends ConsumerState<PatientDetailPage> {
   VitalMetric metric = VitalMetric.heartRate;
   bool chart = true;
   String? selectedId;
+
+  Future<void> _export(bool pdf) async {
+    final box = context.findRenderObject();
+    final origin = box is RenderBox
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
+    try {
+      await shareExport(widget.patient, pdf: pdf, origin: origin);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('The export could not be created. Please retry.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deletePatient() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete patient'),
+        content: Text(
+          'Delete ${widget.patient.name} and all recorded vitals? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref
+          .read(patientsProvider.notifier)
+          .deletePatient(widget.patient.id);
+      if (mounted) context.go('/');
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to delete. Please retry.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteReading(String readingId) async {
+    try {
+      await ref
+          .read(patientsProvider.notifier)
+          .removeReading(widget.patient.id, readingId);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to delete. Please retry.')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,6 +128,26 @@ class _PatientDetailPageState extends State<PatientDetailPage> {
           onPressed: () => context.push('/patient/${patient.id}/vitals'),
           icon: const Icon(Icons.add),
           label: const Text('Add vitals'),
+        ),
+        Wrap(
+          spacing: 8,
+          children: [
+            TextButton(
+              onPressed: () => _export(false),
+              child: const Text('Export CSV'),
+            ),
+            TextButton(
+              onPressed: () => _export(true),
+              child: const Text('Export PDF'),
+            ),
+            TextButton(
+              onPressed: _deletePatient,
+              child: Text(
+                'Delete patient',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          ],
         ),
         const SectionTitle('Last seven days'),
         ChoiceField(
@@ -131,6 +223,15 @@ class _PatientDetailPageState extends State<PatientDetailPage> {
                   ),
                 if (reading.symptoms.isNotEmpty)
                   Text('Symptoms: ${reading.symptoms}'),
+                TextButton(
+                  onPressed: () => _deleteReading(reading.id),
+                  child: Text(
+                    'Delete reading',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -161,11 +262,14 @@ class _PatientDetailPageState extends State<PatientDetailPage> {
             barWidth: 2,
             dotData: FlDotData(
               show: true,
-              getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
-                radius: 4,
-                color: metric.outsideReference(spot.y) ? warning : primary,
-                strokeWidth: 0,
-              ),
+              getDotPainter: (spot, percent, bar, index) =>
+                  metric.outsideReference(spot.y)
+                  ? _DiamondDotPainter(radius: 5, color: warning)
+                  : FlDotCirclePainter(
+                      radius: 4,
+                      color: primary,
+                      strokeWidth: 0,
+                    ),
             ),
           ),
         ],
@@ -227,4 +331,35 @@ class _PatientDetailPageState extends State<PatientDetailPage> {
       ),
     );
   }
+}
+
+class _DiamondDotPainter extends FlDotPainter {
+  const _DiamondDotPainter({required this.radius, required this.color});
+  final double radius;
+  final Color color;
+
+  @override
+  void draw(Canvas canvas, FlSpot spot, Offset offsetInCanvas) {
+    canvas
+      ..save()
+      ..translate(offsetInCanvas.dx, offsetInCanvas.dy)
+      ..rotate(math.pi / 4)
+      ..drawRect(
+        Rect.fromCenter(center: Offset.zero, width: radius * 2, height: radius * 2),
+        Paint()..color = color,
+      )
+      ..restore();
+  }
+
+  @override
+  Size getSize(FlSpot spot) => Size.fromRadius(radius);
+
+  @override
+  Color get mainColor => color;
+
+  @override
+  FlDotPainter lerp(FlDotPainter a, FlDotPainter b, double t) => this;
+
+  @override
+  List<Object?> get props => [radius, color];
 }

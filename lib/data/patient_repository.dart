@@ -17,6 +17,7 @@ class EncryptedRecord {
 abstract interface class RecordStore {
   Future<List<EncryptedRecord>> readAll();
   Future<void> write(EncryptedRecord record);
+  Future<void> delete(String id);
   Future<void> close();
 }
 
@@ -78,6 +79,11 @@ class SqliteRecordStore implements RecordStore {
   }
 
   @override
+  Future<void> delete(String id) async {
+    await (await _open()).delete('patients', where: 'id = ?', whereArgs: [id]);
+  }
+
+  @override
   Future<void> close() async {
     await _database?.close();
     _database = null;
@@ -127,6 +133,8 @@ abstract interface class PatientRepository {
   Future<List<Patient>> load();
   Future<List<Patient>> save(Patient patient);
   Future<List<Patient>> addReading(String patientId, VitalReading reading);
+  Future<List<Patient>> removeReading(String patientId, String readingId);
+  Future<List<Patient>> deletePatient(String patientId);
   Future<void> close();
 }
 
@@ -190,6 +198,33 @@ class LocalPatientRepository implements PatientRepository {
         final patient = matches.first;
         return _persist(patient.copyWith(vitals: [...patient.vitals, reading]));
       });
+
+  @override
+  Future<List<Patient>> removeReading(String patientId, String readingId) =>
+      _serial(() async {
+        final matches = _patients.where((p) => p.id == patientId);
+        if (matches.isEmpty) {
+          throw const PatientValidationException(
+            'Patient is unavailable. Reopen the profile.',
+          );
+        }
+        final patient = matches.first;
+        return _persist(
+          patient.copyWith(
+            vitals: patient.vitals.where((v) => v.id != readingId).toList(),
+          ),
+        );
+      });
+
+  @override
+  Future<List<Patient>> deletePatient(String patientId) => _serial(() async {
+    if (_patients.every((p) => p.id != patientId)) {
+      return List.unmodifiable(_patients);
+    }
+    await records.delete(patientId);
+    _patients = _patients.where((p) => p.id != patientId).toList();
+    return List.unmodifiable(_patients);
+  });
 
   Future<List<Patient>> _persist(Patient patient) async {
     if (!_loaded || _key == null) {
