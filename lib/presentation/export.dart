@@ -124,7 +124,8 @@ Future<File> exportPdf(Patient patient) async {
 
 String _fileName(Patient patient) {
   final base = patient.medicalId.isEmpty ? patient.id : patient.medicalId;
-  return base.substring(0, base.length.clamp(0, 24));
+  final cleaned = base.replaceAll(RegExp('[^A-Za-z0-9._-]'), '-');
+  return cleaned.substring(0, cleaned.length.clamp(0, 24));
 }
 
 Future<void> shareExport(Patient patient, {required bool pdf, Rect? origin}) {

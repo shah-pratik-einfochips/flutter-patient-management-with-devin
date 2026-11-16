@@ -24,8 +24,9 @@ class _PatientDetailPageState extends ConsumerState<PatientDetailPage> {
   String? selectedId;
 
   Future<void> _export(bool pdf) async {
-    final origin = context.findRenderObject() is RenderBox
-        ? (context.findRenderObject()! as RenderBox).paintBounds
+    final box = context.findRenderObject();
+    final origin = box is RenderBox
+        ? box.localToGlobal(Offset.zero) & box.size
         : null;
     try {
       await shareExport(widget.patient, pdf: pdf, origin: origin);
