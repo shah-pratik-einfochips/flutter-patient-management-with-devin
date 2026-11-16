@@ -71,4 +71,51 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('patient and reading can be deleted through the UI', (
+    tester,
+  ) async {
+    final name = 'delete-${DateTime.now().microsecondsSinceEpoch}.db';
+    final repository = LocalPatientRepository(
+      SqliteRecordStore(databaseName: name),
+      PlatformKeyStore(),
+    );
+    addTearDown(repository.close);
+    await repository.load();
+    final patient = Patient(
+      fields: {
+        ProfileField.firstName: 'Remove',
+        ProfileField.lastName: 'Me',
+        ProfileField.medicalId: 'DELETE-001',
+      },
+      birthDate: DateTime(1990, 1, 1),
+      consentGranted: true,
+      vitals: [
+        VitalReading(values: {VitalMetric.heartRate: 70}),
+      ],
+    );
+    await repository.save(patient);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [repositoryProvider.overrideWithValue(repository)],
+        retry: (_, _) => null,
+        child: const PatientHealthApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove Me'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete reading'));
+    await tester.pumpAndSettle();
+    expect((await repository.load()).single.vitals, isEmpty);
+    await tester.tap(find.text('Delete patient'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(await repository.load(), isEmpty);
+    expect(find.text('Remove Me'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
